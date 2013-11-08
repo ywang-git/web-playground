@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>LDRLY User Stats Demo</title>
+  <script src="http://code.jquery.com/jquery-1.9.1.js"></script>
+</head>
+<body>
+<h1 align="center">LDRLY User Stats Demo</h1>
+<table border="1" align="center" width="90%"><tr valign="top"><td align="center"> 
+<h3>User Stats</h3>
+Username: <input type="text" name="username" id="queryUser" /><br>
+<br />
+<table border="1" id="userstats" width="100%"><thead><th>user name</th><th>stat name</th><th>stat value</th></thead></table>
+ </td><td align="center">
+<h3>Leaderboard</h3>
+Stat Name: <input type="text" name="statname" id="queryStat" /><br>
+<br />
+<table border="1" id="leaderboard" width="100%"><thead><th>user rank</th><th>user name</th><th>stat value</th></thead></table>
+</td><td align="center">
+<h3>Update Stat</h3>
+Username: <input type="text" name="newusername" id="updateUserName" /> <br />
+Stat Name: <input type="text" name="newstatname" id="updateStatName" /> <br />
+Stat Value: <input type="text" name="newstatvalue" id="updateStatValue" /> <br />
+<input type="button" id="submit" name="submit" value="submit" />
+</td></tr>
+<tr><td colspan="3" align="center"><h3>Data Update Result</h3><div id="log"></div>
+</td></tr>
+</table>
+<script>
+$("#queryUser").on('input', function() {
+  var getStatsAPI = "http://localhost:3000/LDRLY/getStats?";
+  $.getJSON( getStatsAPI, {
+    username: this.value,
+  })
+    .done(function( data ) {
+
+	    var r = new Array(), j = -1;
+		r[++j] = '<thead><th>user name</th><th>stat name</th><th>stat value</th></thead>';
+		
+    	for (var key = 0; key < data.length; key++) {
+    		r[++j] ='<tr><td><div class="username">';
+    		r[++j] = data[key].username;
+     		r[++j] = '</div></td><td><div class="statname">';
+     		r[++j] = data[key].statname;
+     		r[++j] = '</div></td><td><div class="statvalue">';
+     		r[++j] = data[key].statvalue;
+     		r[++j] = '</div></td></tr>';
+    	}
+    	$('#userstats').html(r.join('')); 
+    });
+});
+
+$("#queryStat").on('input', function() {
+  var getStatsAPI = "http://localhost:3000/LDRLY/getLeaderboard?";
+  $.getJSON( getStatsAPI, {
+    statname: this.value,
+  })
+    .done(function( data ) {
+
+	    var r = new Array(), j = -1;
+		r[++j] = '<thead><th>user rank</th><th>user name</th><th>stat value</th></thead>';
+		
+    	for (var key = 0; key < data.length; key++) {
+    		r[++j] ='<tr><td><div class="rank">';
+    		r[++j] = data[key].rank;
+     		r[++j] = '</div></td><td><a class="username">';
+     		r[++j] = data[key].username;
+     		r[++j] = '</a></td><td><div class="statvalue">';
+     		r[++j] = data[key].statvalue;
+     		r[++j] = '</div></td></tr>';
+    	}
+    	$('#leaderboard').html(r.join('')); 
+    });
+});
+
+$("#submit").click(function() {
+	var request = $.ajax({
+  		url: "http://localhost:3000/LDRLY/sendStat",
+  		type: "POST",
+  		data: {username : $("#updateUserName").val(), statname : $("#updateStatName").val(), statvalue : $("#updateStatValue").val() },
+  		dataType: "html"
+	});
+
+	request.done(function(msg) {
+  		$("#log").html( msg );
+	});
+
+	request.fail(function(jqXHR, textStatus) {
+  		$("#log").html( "Request failed: " + textStatus );
+	});
+});
+/*
+$(".username").on('click', function() {
+	$("#queryUser").value = this.value;
+	$("#queryUser").change();
+});
+*/
+</script>
+ 
+</body>
+</html>
