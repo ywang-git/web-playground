@@ -1,0 +1,395 @@
+<html>
+	<body>
+
+	<canvas id="canvas" width="1200" height="500"></canvas>
+	<br />
+	<button id="start">Start</button>
+	<button id="next">Next</next>
+	<span><span/>
+
+	<!-- Jquery -->
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript"></script>
+
+	<script>
+
+
+	$(document).ready(function() {
+		var canvas = $("#canvas")[0];
+		var ctx = canvas.getContext("2d");
+		var w = $("#canvas").width();
+		var h = $("#canvas").height();
+
+		var myBoard;
+
+		// restart game
+		$("#start").click(function() {
+			myBoard.init();
+			myBoard.deal();
+			myBoard.start();
+		})
+
+		// start the next round
+		$("#next").click(function() {
+			myBoard.collect();
+			myBoard.deal();
+			myBoard.start();
+		})
+
+		// click a card to select
+		$("canvas").click(function(event) {
+			myBoard.select(event.pageX, event.pageY);
+		})
+
+		// double click to move
+		$("canvas").dblclick(function(event) {
+			myBoard.move(myBoard.getSlot(event.pageX, event.pageY));
+		})
+
+		init();
+
+		// global function init()
+		function init() {
+			myBoard = new board();		
+			console.log("board created");
+
+			myBoard.init();
+
+			if (typeof mainLoop != "undefined") clearInterval(mainLoop);
+			mainLoop = setInterval(main, 60);
+		}
+
+		// global function, main game loop
+		function main() {
+			ctx.clearRect(0, 0, w, h);
+			myBoard.paint(ctx);
+		}
+
+		function card(s, r) {
+			this.suit = s;
+			this.rank = r;
+
+			this.toString = function() {
+				return this.suit.toString() + ' ' + this.rank.toString();
+			}
+
+			this.paint = function(context, x, y, width, height, color) {
+				var style = color;
+				if (!style) {
+					style = (this.suit == "♥︎" || this.suit == "♦")
+						? "#FF0000" : "#000000";
+				}
+				context.strokeStyle = style;
+				context.fillStyle = "#FFFFFF";
+				context.strokeRect(x, y, width, height);
+
+				context.font = "30px Arial";
+				context.fillStyle = style;
+				context.fillText(this.suit, x + 15, y + 30);
+				context.fillText(this.rank, x + 30, y + 70);
+			}
+
+			this.next = function(ranks) {
+				var r = ranks.indexOf(this.rank);
+				if (r > 0) {
+					return new card(this.suit, ranks[r - 1]);
+				}
+				else {
+					return undefined;
+				}
+			}
+
+			this.equalsTo = function(c) {
+				return (this.suit == c.suit && this.rank == c.rank);
+			}
+
+		}
+
+		function deck() {
+			this.suits = ["♣", "♦", "♥︎", "♠︎"];
+			this.ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+			this.cards = [];
+
+			this.createDeck = function() {
+				this.cards.splice(0, this.cards.length);
+				for (s = 0; s < this.suits.length; ++s) {
+					for (r = 0; r < this.ranks.length; ++r) {
+						this.cards.push(new card(this.suits[s], this.ranks[r]));
+					}
+				}
+			}
+
+			this.shuffleDeck = function() {
+				for (i = 0; i < this.cards.length; ++i) {
+					// get a random number between 0 and the remaining card
+					r = Math.floor(Math.random() * (this.cards.length - i));
+					c = this.cards[r];
+					this.cards.splice(r, 1);
+					this.cards.push(c);
+				}
+			}
+
+			this.dealCard = function() {
+				return this.cards.pop();
+			}
+		}
+
+		function board() {
+			// size of the board
+			this.row = 4;
+			this.col = 13;
+
+			// for rendering
+			this.cardWidth = 80;
+			this.cardHeight = 105;
+			this.padding = 10;
+			this.offset = 2;
+
+			// data
+			this.slotSize = this.row * this.col;
+			this.slots = [];
+			this.cardDeck = new deck();
+
+			// state
+			this.selectedSlot = "none";
+			this.emptySlots = [];
+			this.progress = 0;
+
+			this.reset = function() {
+				this.progress = 0;
+				for	(i = 0; i < this.slotSize; ++i) {
+					this.slots[i] = "empty";
+				}
+				// clear selection
+				this.selectedSlot = "none";
+			}
+
+			this.getX = function(r) {
+				return r * (this.cardWidth + this.padding) + this.padding;
+			}
+
+			this.getY = function(c) {
+				return c * (this.cardHeight + this.padding) + this.padding;
+			}
+
+			this.paint = function(context) {
+				// render board
+				for (i = 0; i < this.row; ++i) {
+					for (j = 0; j < this.col; ++j) {
+						if (this.slots[i * this.col + j] === "empty") {
+							context.strokeStyle = "#666666";
+							context.strokeRect(this.getX(j), this.getY(i), 80, 105);
+						}
+						else {
+							var off = 0;
+							var color = undefined;
+							if (this.selectedSlot === (i * this.col + j)) {
+								off = this.offset;
+								color = "#7070FF";
+							}
+							this.slots[i * this.col + j].paint(context,
+								this.getX(j) - off, this.getY(i) + off,
+								this.cardWidth, this.cardHeight, color);
+						}
+					}
+				}
+
+				// render progress
+				context.font = "20px Arial";
+				context.fillStyle = "#001A66";
+				context.fillText("PROGRESS: "
+				 	+ Math.round(this.progress / (this.row * (this.col - 1)) * 10000) / 100
+				 	+ "%", 20, 490);
+
+			}
+
+			this.init = function() {
+				this.reset();
+				this.cardDeck.createDeck();
+				this.cardDeck.shuffleDeck();
+			}
+
+			// deal cards to the slots
+			this.deal = function() {
+				this.cardDeck.shuffleDeck();
+				for	(i = 0; i < this.slotSize; ++i) {
+					if (this.slots[i] === "empty")
+					{
+						this.slots[i] = this.cardDeck.dealCard();
+					}
+				}			
+			}
+
+			// returns a slot given a coordinate on canvas
+			// returns -1 if not within any bounding box
+			this.getSlot = function(coordX, coordY) {
+				x = Math.floor((coordX - this.padding) 
+					/ (this.cardWidth + this.padding));
+				y = Math.floor((coordY - this.padding) 
+					/ (this.cardHeight + this.padding));
+
+
+				if (x >= 0 && x < this.col && y >= 0 && y < this.row
+					&& this.getX(x) <= coordX && coordX <= this.getX(x) + this.cardWidth
+					&& this.getY(y) <= coordY && coordY <= this.getY(y) + this.cardHeight) {
+					return y * this.col + x;
+				}
+				else {
+					return -1;
+				}
+			}
+
+			this.select = function(coordX, coordY) {
+				var s = this.getSlot(coordX, coordY);
+
+				console.log("try to select: " + this.selectedSlot
+					+ "(" + this.slots[this.selectedSlot] + ")"
+					+ " => " + s + "(" + this.slots[s] + ")");
+
+				if (s >= 0) {
+					if (this.selectedSlot === s) {
+						this.selectedSlot = "none";
+					}
+					// if there is only one possible move for this empty slot
+					// select the card that can be moved here
+					else if (this.slots[s] == "empty"
+						&& s % this.col != 0
+						&& this.slots[s - 1] != "empty"
+						) {
+						var c = this.slots[s - 1].next(this.cardDeck.ranks);
+						if (c) {
+							for (var i = 0; i < this.slotSize; ++i) {
+								if (this.slots[i] != "empty"
+									&& this.slots[i].equalsTo(c)) {
+									this.selectedSlot = i;
+								}
+							}
+						}
+					}
+					// do not change selection if it is an empty slot
+					else if (this.slots[s] != "empty") {
+						this.selectedSlot = s;
+					}
+				}
+				console.log("selected: " + this.selectedSlot
+					+ "(" + this.slots[this.selectedSlot] + ")");
+
+			}
+
+			// find card in slot
+			this.find = function(c) {
+				if (c) {
+					for (i = 0; i < this.slotSize; ++i) {
+						if (this.slots[i] != "empty"
+							&& this.slots[i].equalsTo(c)) {
+							return i;
+						}
+					}
+				}
+				return -1;
+			}
+
+			// take out aces to allow the game to start
+			this.start = function() {
+				// clear selection
+				this.selectedSlot = "none";
+				// clear empty slots
+				this.emptySlots.splice(0, this.emptySlots.length);
+
+				for (var s = 0; s < this.cardDeck.suits.length; ++s) {
+					var i = this.find(new card(this.cardDeck.suits[s],
+						this.cardDeck.ranks[0]));
+					this.cardDeck.cards.push(this.slots[i]);
+					this.slots[i] = "empty";
+					// push the card back to the deck for next round
+					this.emptySlots.push(i);
+				}
+			}
+
+			this.move = function(dest) {
+				// make sure we only perform a move on empty slots
+				console.log("[move] selected: " + this.selectedSlot);
+				var e = this.emptySlots.indexOf(dest);
+				var src = -1;
+				console.log("empty pos: " + e);
+				if (e >= 0) {
+					// the empty slot is heading a row, which only allows K
+					if (dest % this.col == 0) {
+						console.log("try moving to head pos, selected [" + this.selectedSlot
+							+ ": " + this.slots[this.selectedSlot] + "]");
+						// too many choices, try using previuos selected one
+						if (this.selectedSlot != "none"
+							// must be a "K"
+							&& this.slots[this.selectedSlot].rank 
+								== this.cardDeck.ranks[this.cardDeck.ranks.length - 1]
+							// cannot be in a head position already
+							&& this.selectedSlot % this.col != 0) {
+							src = this.selectedSlot;
+						}
+					}
+					// if not heading, check the slot before the empty one
+					else {
+						var m = this.slots[dest - 1].next(this.cardDeck.ranks);
+						i = this.find(m);
+						if (i >= 0) {
+							src = i;
+						}
+					}
+					// successfull move, actually src cannot be 0
+					if (src >= 0) {
+						this.swap(src, dest);
+						this.emptySlots[e] = src;
+						// clear selection after sucessful move
+						this.selectedSlot = "none";
+
+						this.progress = 0;
+						for (var r = 0; r < this.row; ++ r) {
+							this.progress += this.checkRow(r);
+						}
+					}
+				}
+				return src;
+			}
+
+			this.swap = function(src, dest) {
+				var temp = this.slots[dest];
+				this.slots[dest] = this.slots[src];
+				this.slots[src] = temp;
+			}
+
+			this.collect = function() {
+				for (var r = 0; r < this.row; ++r) {
+					var o = this.checkRow(r);
+					for (var c = o; c < this.col; ++c) {
+						var s = r * this.col + c;
+						if (this.slots[s] != "empty") {
+							this.cardDeck.cards.push(this.slots[s]);
+							this.slots[s] = "empty";							
+						}
+					}
+				}
+			}
+
+			// give row number, check how many cards are in order
+			this.checkRow = function(r) {
+				var s = r * this.col;
+				var ordered = 0;
+				if (this.slots[s].rank 
+					== this.cardDeck.ranks[this.cardDeck.ranks.length - 1]) {
+					ordered = 1;
+					while (this.slots[s + 1] != "empty"
+						&& this.slots[s].next(this.cardDeck.ranks)
+						.equalsTo(this.slots[s + 1])) {
+						++ordered;
+						if (++s % this.col == 0) {
+							break;
+						} 
+					}
+				}
+				console.log("row " + r + ": " + ordered + " in order");
+				return ordered;
+			}
+		}
+	})
+	</script>
+	</body>
+</html>
