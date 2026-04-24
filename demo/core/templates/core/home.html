@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>demo</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      body { font: 14px sans-serif; margin: 2rem; }
+      .bar { fill: steelblue; }
+      .bar:hover { fill: darkorange; }
+      .axis text { font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Hello from the core app!</h1>
+    <svg id="chart" width="480" height="260"></svg>
+    <script>
+      const data = [
+        { label: "A", value: 12 },
+        { label: "B", value: 37 },
+        { label: "C", value: 24 },
+        { label: "D", value: 48 },
+        { label: "E", value: 19 },
+      ];
+
+      const svg = d3.select("#chart");
+      const width = +svg.attr("width");
+      const height = +svg.attr("height");
+      const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+
+      const g = svg.append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      const x = d3.scaleBand()
+        .domain(data.map(d => d.label))
+        .range([0, innerW])
+        .padding(0.15);
+
+      const y = d3.scaleLinear()
+        .domain([0, d3.max(data, d => d.value)]).nice()
+        .range([innerH, 0]);
+
+      g.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${innerH})`)
+        .call(d3.axisBottom(x));
+
+      g.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y));
+
+      g.selectAll(".bar")
+        .data(data)
+        .join("rect")
+        .attr("class", "bar")
+        .attr("x", d => x(d.label))
+        .attr("y", d => y(d.value))
+        .attr("width", x.bandwidth())
+        .attr("height", d => innerH - y(d.value));
+    </script>
+  </body>
+</html>
