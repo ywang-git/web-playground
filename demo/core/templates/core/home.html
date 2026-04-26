@@ -2,63 +2,254 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>demo</title>
+    <title>Entity-event graph</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-      body { font: 14px sans-serif; margin: 2rem; }
-      .bar { fill: steelblue; }
-      .bar:hover { fill: darkorange; }
-      .axis text { font-size: 12px; }
+      body { font: 14px/1.4 sans-serif; margin: 0; color: #222; }
+      header { padding: 1rem 1.25rem; border-bottom: 1px solid #ddd; display: flex; align-items: baseline; gap: 1rem; }
+      header h1 { margin: 0; font-size: 1.1rem; }
+      .tabs button { padding: 0.4rem 0.9rem; margin-right: 0.25rem; border: 1px solid #bbb; background: #fafafa; cursor: pointer; }
+      .tabs button.active { background: #222; color: #fff; border-color: #222; }
+      main { display: flex; height: calc(100vh - 56px); }
+      #viz { flex: 1; position: relative; overflow: hidden; }
+      #viz svg { width: 100%; height: 100%; display: block; background: #fff; }
+      #panel { width: 360px; border-left: 1px solid #ddd; padding: 1rem 1.25rem; overflow-y: auto; background: #fcfcfc; }
+      #panel h2 { margin-top: 0; font-size: 1rem; }
+      #panel .placeholder { color: #999; font-style: italic; }
+      #panel .field-label { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-top: 0.9rem; }
+      #panel .chips { margin-top: 0.25rem; }
+      #panel .chip { display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 999px; background: #eef; color: #224; font-size: 0.78rem; text-decoration: none; border: 1px solid #cce; }
+      #panel .chip:hover { background: #dde; }
+      #panel .chip.place { background: #efe; color: #242; border-color: #cec; }
+      #panel .source { margin-top: 0.6rem; padding: 0.5rem 0.7rem; background: #f3f3f3; border-left: 3px solid #888; }
+      #panel .source-badge { display: inline-block; font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; background: #444; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+      .source-badge.WIKIPEDIA { background: #36c; }
+      .source-badge.WEB { background: #888; }
+      .source-badge.BOOK { background: #a64; }
+      .source-badge.NOTE { background: #864; }
+      .source-badge.OTHER { background: #555; }
+      .node-entity { stroke: #333; stroke-width: 1.5px; cursor: pointer; }
+      .node-entity.PERSON { fill: #f6c; }
+      .node-entity.GROUP { fill: #6cf; }
+      .node-entity.PLACE { fill: #6c6; }
+      .node-entity.ORGANIZATION { fill: #fc6; }
+      .node-entity.OTHER { fill: #ccc; }
+      .node-event { fill: #fff; cursor: pointer; }
+      .node-event.MAJOR { stroke: #c33; stroke-width: 3px; }
+      .node-event.NORMAL { stroke: #555; stroke-width: 1.5px; }
+      .node-event.MINOR { stroke: #999; stroke-width: 1px; opacity: 0.6; }
+      .node-label { font-size: 10px; fill: #333; pointer-events: none; }
+      .edge { stroke: #aaa; stroke-opacity: 0.6; stroke-width: 1px; }
+      .edge.place { stroke-dasharray: 3 3; stroke: #6a6; }
+      #timeline-svg .axis text { font-size: 11px; }
+      #timeline-svg .marker { cursor: pointer; }
+      .hidden { display: none; }
     </style>
   </head>
   <body>
-    <h1>Hello from the core app!</h1>
-    <svg id="chart" width="480" height="260"></svg>
+    <header>
+      <h1>Entity-event graph</h1>
+      <div class="tabs">
+        <button id="tab-network" class="active" type="button">Network</button>
+        <button id="tab-timeline" type="button">Timeline</button>
+      </div>
+    </header>
+    <main>
+      <div id="viz">
+        <svg id="network-svg"></svg>
+        <svg id="timeline-svg" class="hidden"></svg>
+      </div>
+      <aside id="panel">
+        <p class="placeholder">Click an event in the network or timeline to see its details. Click an entity (person, group, place) to open its page.</p>
+      </aside>
+    </main>
     <script>
-      const data = [
-        { label: "A", value: 12 },
-        { label: "B", value: 37 },
-        { label: "C", value: 24 },
-        { label: "D", value: 48 },
-        { label: "E", value: 19 },
-      ];
+      const KIND_LABELS = {
+        PERSON: "Person", GROUP: "Group", PLACE: "Place",
+        ORGANIZATION: "Organization", OTHER: "Other",
+      };
+      const SIG_RADIUS = { MAJOR: 11, NORMAL: 7, MINOR: 5 };
+      const SIG_TIMELINE = { MAJOR: 9, NORMAL: 6, MINOR: 4 };
 
-      const svg = d3.select("#chart");
-      const width = +svg.attr("width");
-      const height = +svg.attr("height");
-      const margin = { top: 20, right: 20, bottom: 30, left: 40 };
-      const innerW = width - margin.left - margin.right;
-      const innerH = height - margin.top - margin.bottom;
+      function renderSource(source) {
+        const kind = source.kind || "OTHER";
+        const labelMap = { WIKIPEDIA: "Wikipedia", WEB: "Web", BOOK: "Book", NOTE: "Note", OTHER: "Source" };
+        const label = labelMap[kind] || "Source";
+        let body = "";
+        if (source.url) {
+          body = `<a href="${source.url}" target="_blank" rel="noopener">${source.url}</a>`;
+        } else if (source.citation) {
+          body = `<span>${escapeHTML(source.citation)}</span>`;
+        }
+        const snippet = source.snippet
+          ? `<div style="margin-top: 6px; color: #444;">&ldquo;${escapeHTML(source.snippet)}&rdquo;</div>`
+          : "";
+        return `<div class="source"><span class="source-badge ${kind}">${label}</span>${body ? "<div>" + body + "</div>" : ""}${snippet}</div>`;
+      }
 
-      const g = svg.append("g")
-        .attr("transform", `translate(${margin.left},${margin.top})`);
+      function escapeHTML(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      }
 
-      const x = d3.scaleBand()
-        .domain(data.map(d => d.label))
-        .range([0, innerW])
-        .padding(0.15);
+      function renderEventDetail(detail) {
+        const panel = document.getElementById("panel");
+        const placeChip = detail.place
+          ? `<a class="chip place" href="/entity/${detail.place.slug}/">${escapeHTML(detail.place.name)}</a>`
+          : '<span class="placeholder">unknown</span>';
+        const participants = detail.participants.length
+          ? detail.participants.map(p =>
+              `<a class="chip" href="/entity/${p.slug}/">${escapeHTML(p.name)}</a>`).join("")
+          : '<span class="placeholder">none recorded</span>';
+        panel.innerHTML = `
+          <h2>${escapeHTML(detail.title)}</h2>
+          <div style="color:#666;">${escapeHTML(detail.when_text)}
+            &middot; <span title="significance">${escapeHTML(detail.significance.toLowerCase())}</span></div>
 
-      const y = d3.scaleLinear()
-        .domain([0, d3.max(data, d => d.value)]).nice()
-        .range([innerH, 0]);
+          <div class="field-label">Who</div>
+          <div class="chips">${participants}</div>
 
-      g.append("g")
-        .attr("class", "axis")
-        .attr("transform", `translate(0,${innerH})`)
-        .call(d3.axisBottom(x));
+          <div class="field-label">What</div>
+          <div>${escapeHTML(detail.description)}</div>
 
-      g.append("g")
-        .attr("class", "axis")
-        .call(d3.axisLeft(y));
+          <div class="field-label">Where</div>
+          <div class="chips">${placeChip}</div>
 
-      g.selectAll(".bar")
-        .data(data)
-        .join("rect")
-        .attr("class", "bar")
-        .attr("x", d => x(d.label))
-        .attr("y", d => y(d.value))
-        .attr("width", x.bandwidth())
-        .attr("height", d => innerH - y(d.value));
+          ${detail.why ? `<div class="field-label">Why</div><div>${escapeHTML(detail.why)}</div>` : ""}
+
+          <div class="field-label">Source</div>
+          ${renderSource(detail.source)}
+        `;
+      }
+
+      function loadEvent(id) {
+        fetch(`/api/events/${id}/`).then(r => r.json()).then(renderEventDetail);
+      }
+
+      // Tabs
+      const networkSvg = document.getElementById("network-svg");
+      const timelineSvg = document.getElementById("timeline-svg");
+      const tabNet = document.getElementById("tab-network");
+      const tabTime = document.getElementById("tab-timeline");
+      let timelineRendered = false;
+      tabNet.addEventListener("click", () => {
+        tabNet.classList.add("active"); tabTime.classList.remove("active");
+        networkSvg.classList.remove("hidden"); timelineSvg.classList.add("hidden");
+      });
+      tabTime.addEventListener("click", () => {
+        tabTime.classList.add("active"); tabNet.classList.remove("active");
+        timelineSvg.classList.remove("hidden"); networkSvg.classList.add("hidden");
+        if (!timelineRendered) { renderTimeline(); timelineRendered = true; }
+      });
+
+      // Network
+      function renderNetwork(graph) {
+        const svg = d3.select(networkSvg);
+        const { width, height } = networkSvg.getBoundingClientRect();
+
+        const linkData = graph.edges.map(e => Object.assign({}, e));
+        const nodeData = graph.nodes.map(n => Object.assign({}, n));
+
+        const sim = d3.forceSimulation(nodeData)
+          .force("link", d3.forceLink(linkData).id(d => d.id).distance(70).strength(0.6))
+          .force("charge", d3.forceManyBody().strength(-160))
+          .force("center", d3.forceCenter(width / 2, height / 2))
+          .force("collide", d3.forceCollide(14));
+
+        const linkSel = svg.append("g").selectAll("line").data(linkData).join("line")
+          .attr("class", d => `edge ${d.kind}`);
+
+        const nodeG = svg.append("g").selectAll("g").data(nodeData).join("g")
+          .call(d3.drag()
+            .on("start", (event, d) => { if (!event.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+            .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+            .on("end", (event, d) => { if (!event.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+        nodeG.each(function (d) {
+          const sel = d3.select(this);
+          if (d.type === "entity") {
+            sel.append("circle")
+              .attr("r", 9)
+              .attr("class", `node-entity ${d.kind}`)
+              .on("click", () => { window.location.href = `/entity/${d.slug}/`; });
+          } else {
+            const r = SIG_RADIUS[d.significance] || 7;
+            sel.append("rect")
+              .attr("width", r * 2).attr("height", r * 2)
+              .attr("x", -r).attr("y", -r)
+              .attr("class", `node-event ${d.significance}`)
+              .on("click", () => loadEvent(d.event_id));
+          }
+          sel.append("title").text(d.type === "entity"
+            ? `${d.name} (${KIND_LABELS[d.kind] || d.kind})`
+            : `${d.title} — ${d.when_text}`);
+          sel.append("text")
+            .attr("class", "node-label").attr("x", 12).attr("y", 4)
+            .text(d.type === "entity" ? d.name : d.title);
+        });
+
+        sim.on("tick", () => {
+          linkSel
+            .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+          nodeG.attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+      }
+
+      // Timeline
+      function whenSortKeyToDate(key) {
+        // [year, month, day]; 0 means unknown -> midpoint defaults
+        const [y, m, d] = key;
+        return new Date(y, (m || 1) - 1, d || (m ? 15 : 1));
+      }
+
+      function renderTimeline() {
+        fetch("/api/events/").then(r => r.json()).then(({ events }) => {
+          const svg = d3.select(timelineSvg);
+          svg.selectAll("*").remove();
+          const { width, height } = timelineSvg.getBoundingClientRect();
+          const margin = { top: 30, right: 30, bottom: 40, left: 30 };
+          const innerW = width - margin.left - margin.right;
+          const innerH = height - margin.top - margin.bottom;
+
+          const dates = events.map(e => whenSortKeyToDate(e.when_sort_key));
+          const x = d3.scaleTime()
+            .domain(d3.extent(dates))
+            .range([0, innerW])
+            .nice();
+
+          const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+          g.append("g")
+            .attr("class", "axis")
+            .attr("transform", `translate(0,${innerH})`)
+            .call(d3.axisBottom(x));
+
+          // Vertical jitter per event using a hash on id so it's stable
+          const jitter = id => ((id * 53) % 7 - 3) * 18;
+
+          const markers = g.selectAll(".marker").data(events).join("g")
+            .attr("class", "marker")
+            .attr("transform", d => `translate(${x(whenSortKeyToDate(d.when_sort_key))},${innerH / 2 + jitter(d.id)})`)
+            .on("click", (_, d) => loadEvent(d.id));
+
+          markers.append("circle")
+            .attr("r", d => SIG_TIMELINE[d.significance] || 6)
+            .attr("class", d => `node-event ${d.significance}`);
+
+          markers.append("title").text(d => `${d.title} — ${d.when_text}`);
+          markers.append("text")
+            .attr("class", "node-label")
+            .attr("x", 10).attr("y", 4)
+            .text(d => d.title);
+        });
+      }
+
+      // Boot
+      fetch("/api/graph/").then(r => r.json()).then(renderNetwork);
+
+      // Optional deep-link: /?event=<id>
+      const params = new URLSearchParams(window.location.search);
+      const evId = params.get("event");
+      if (evId) loadEvent(evId);
     </script>
   </body>
 </html>

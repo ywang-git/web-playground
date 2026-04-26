@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ entity.name }} — entity</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      body { font: 14px/1.4 sans-serif; margin: 0; color: #222; }
+      header { padding: 1rem 1.25rem; border-bottom: 1px solid #ddd; display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+      header a.back { color: #36c; text-decoration: none; font-size: 0.9rem; }
+      header h1 { margin: 0; font-size: 1.2rem; }
+      .kind-badge { display: inline-block; font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; background: #eee; color: #333; text-transform: uppercase; letter-spacing: 0.05em; border: 1px solid #ccc; }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; height: calc(100vh - 80px); }
+      #graph { border-right: 1px solid #ddd; overflow: hidden; }
+      #graph svg { width: 100%; height: 100%; display: block; background: #fff; }
+      #events { padding: 1rem 1.25rem; overflow-y: auto; background: #fcfcfc; }
+      .description { padding: 0.5rem 1.25rem 0.75rem; color: #444; }
+      .wiki-link { color: #36c; }
+      .event-card { border: 1px solid #ddd; border-left: 4px solid #888; background: #fff; padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; }
+      .event-card.MAJOR { border-left-color: #c33; }
+      .event-card.NORMAL { border-left-color: #555; }
+      .event-card.MINOR { border-left-color: #aaa; opacity: 0.85; }
+      .event-card h3 { margin: 0 0 4px; font-size: 0.95rem; }
+      .event-card h3 a { color: #222; text-decoration: none; }
+      .event-card h3 a:hover { text-decoration: underline; }
+      .event-card .when { color: #666; font-size: 0.85rem; }
+      .event-card .chips { margin-top: 0.4rem; }
+      .chip { display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 999px; background: #eef; color: #224; font-size: 0.78rem; text-decoration: none; border: 1px solid #cce; }
+      .chip:hover { background: #dde; }
+      .chip.place { background: #efe; color: #242; border-color: #cec; }
+      .chip.self { background: #ffe; color: #553; border-color: #ddc; }
+      .source { margin-top: 0.5rem; padding: 0.4rem 0.6rem; background: #f3f3f3; border-left: 3px solid #888; font-size: 0.85rem; }
+      .source-badge { display: inline-block; font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; background: #444; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+      .source-badge.WIKIPEDIA { background: #36c; }
+      .source-badge.WEB { background: #888; }
+      .source-badge.BOOK { background: #a64; }
+      .source-badge.NOTE { background: #864; }
+      .source-badge.OTHER { background: #555; }
+      .node-entity { stroke: #333; stroke-width: 1.5px; cursor: pointer; }
+      .node-entity.PERSON { fill: #f6c; }
+      .node-entity.GROUP { fill: #6cf; }
+      .node-entity.PLACE { fill: #6c6; }
+      .node-entity.ORGANIZATION { fill: #fc6; }
+      .node-entity.OTHER { fill: #ccc; }
+      .node-entity.center { stroke: #c33; stroke-width: 3px; }
+      .node-event { fill: #fff; cursor: pointer; }
+      .node-event.MAJOR { stroke: #c33; stroke-width: 3px; }
+      .node-event.NORMAL { stroke: #555; stroke-width: 1.5px; }
+      .node-event.MINOR { stroke: #999; stroke-width: 1px; opacity: 0.6; }
+      .node-label { font-size: 10px; fill: #333; pointer-events: none; }
+      .edge { stroke: #aaa; stroke-opacity: 0.6; stroke-width: 1px; }
+      .edge.place { stroke-dasharray: 3 3; stroke: #6a6; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="back" href="/">&larr; All events</a>
+      <h1>{{ entity.name }}</h1>
+      <span class="kind-badge">{{ entity.get_kind_display }}</span>
+      {% if entity.wikipedia_url %}<a class="wiki-link" href="{{ entity.wikipedia_url }}" target="_blank" rel="noopener">Wikipedia</a>{% endif %}
+    </header>
+    {% if entity.description %}<div class="description">{{ entity.description }}</div>{% endif %}
+    <main>
+      <div id="graph"><svg id="entity-graph-svg"></svg></div>
+      <div id="events"><p style="color:#999;">Loading events...</p></div>
+    </main>
+    <script>
+      const ENTITY_SLUG = "{{ entity.slug|escapejs }}";
+      const KIND_LABELS = { PERSON: "Person", GROUP: "Group", PLACE: "Place", ORGANIZATION: "Organization", OTHER: "Other" };
+      const SIG_RADIUS = { MAJOR: 11, NORMAL: 7, MINOR: 5 };
+
+      function escapeHTML(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      }
+
+      function renderSource(source) {
+        const kind = source.kind || "OTHER";
+        const labelMap = { WIKIPEDIA: "Wikipedia", WEB: "Web", BOOK: "Book", NOTE: "Note", OTHER: "Source" };
+        const label = labelMap[kind] || "Source";
+        let body = "";
+        if (source.url) {
+          body = `<a href="${source.url}" target="_blank" rel="noopener">${source.url}</a>`;
+        } else if (source.citation) {
+          body = `<span>${escapeHTML(source.citation)}</span>`;
+        }
+        const snippet = source.snippet
+          ? `<div style="margin-top: 4px; color: #444;">&ldquo;${escapeHTML(source.snippet)}&rdquo;</div>`
+          : "";
+        return `<div class="source"><span class="source-badge ${kind}">${label}</span>${body ? "<div>" + body + "</div>" : ""}${snippet}</div>`;
+      }
+
+      function renderEventList(events) {
+        const container = document.getElementById("events");
+        if (!events.length) {
+          container.innerHTML = '<p style="color:#999;">No events recorded for this entity.</p>';
+          return;
+        }
+        container.innerHTML = events.map(detail => {
+          const others = detail.participants
+            .filter(p => p.slug !== ENTITY_SLUG)
+            .map(p => `<a class="chip" href="/entity/${p.slug}/">${escapeHTML(p.name)}</a>`)
+            .join("");
+          const self = detail.participants.find(p => p.slug === ENTITY_SLUG)
+            ? `<span class="chip self">${escapeHTML("{{ entity.name|escapejs }}")}</span>`
+            : "";
+          const place = detail.place
+            ? (detail.place.slug === ENTITY_SLUG
+                ? `<span class="chip self">at here</span>`
+                : `<a class="chip place" href="/entity/${detail.place.slug}/">${escapeHTML(detail.place.name)}</a>`)
+            : "";
+          return `
+            <div class="event-card ${detail.significance}">
+              <h3><a href="/?event=${detail.id}">${escapeHTML(detail.title)}</a></h3>
+              <div class="when">${escapeHTML(detail.when_text)} &middot; ${detail.significance.toLowerCase()}</div>
+              <div>${escapeHTML(detail.description)}</div>
+              <div class="chips">${self}${others}${place}</div>
+              ${renderSource(detail.source)}
+            </div>
+          `;
+        }).join("");
+      }
+
+      function renderGraph(graph) {
+        const svgEl = document.getElementById("entity-graph-svg");
+        const svg = d3.select(svgEl);
+        const { width, height } = svgEl.getBoundingClientRect();
+
+        const linkData = graph.edges.map(e => Object.assign({}, e));
+        const nodeData = graph.nodes.map(n => Object.assign({}, n));
+
+        const sim = d3.forceSimulation(nodeData)
+          .force("link", d3.forceLink(linkData).id(d => d.id).distance(60).strength(0.6))
+          .force("charge", d3.forceManyBody().strength(-140))
+          .force("center", d3.forceCenter(width / 2, height / 2))
+          .force("collide", d3.forceCollide(13));
+
+        const linkSel = svg.append("g").selectAll("line").data(linkData).join("line")
+          .attr("class", d => `edge ${d.kind}`);
+
+        const nodeG = svg.append("g").selectAll("g").data(nodeData).join("g")
+          .call(d3.drag()
+            .on("start", (event, d) => { if (!event.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+            .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+            .on("end", (event, d) => { if (!event.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+        nodeG.each(function (d) {
+          const sel = d3.select(this);
+          if (d.type === "entity") {
+            const isCenter = d.slug === ENTITY_SLUG;
+            sel.append("circle")
+              .attr("r", isCenter ? 12 : 9)
+              .attr("class", `node-entity ${d.kind}${isCenter ? " center" : ""}`)
+              .on("click", () => { if (!isCenter) window.location.href = `/entity/${d.slug}/`; });
+          } else {
+            const r = SIG_RADIUS[d.significance] || 7;
+            sel.append("rect")
+              .attr("width", r * 2).attr("height", r * 2)
+              .attr("x", -r).attr("y", -r)
+              .attr("class", `node-event ${d.significance}`)
+              .on("click", () => { window.location.href = `/?event=${d.event_id}`; });
+          }
+          sel.append("title").text(d.type === "entity"
+            ? `${d.name} (${KIND_LABELS[d.kind] || d.kind})`
+            : `${d.title} — ${d.when_text}`);
+          sel.append("text")
+            .attr("class", "node-label").attr("x", 12).attr("y", 4)
+            .text(d.type === "entity" ? d.name : d.title);
+        });
+
+        sim.on("tick", () => {
+          linkSel
+            .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+          nodeG.attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+      }
+
+      fetch(`/api/entity/${ENTITY_SLUG}/`).then(r => r.json()).then(payload => {
+        renderGraph(payload.graph);
+        renderEventList(payload.events);
+      });
+    </script>
+  </body>
+</html>
