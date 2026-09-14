@@ -1,9 +1,9 @@
-<!doctype html>
+{% load static %}<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>{{ entity.name }} — entity</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="{% static 'core/vendor/d3.v7.min.js' %}"></script>
     <style>
       body { font: 14px/1.4 sans-serif; margin: 0; color: #222; }
       header { padding: 1rem 1.25rem; border-bottom: 1px solid #ddd; display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
